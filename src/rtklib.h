@@ -971,6 +971,7 @@ typedef struct {        /* processing options type */
     int navsys;         /* navigation system */
     double elmin;       /* elevation mask angle (rad) */
     snrmask_t snrmask;  /* SNR mask */
+    double elmaskdata[361]; /* elevation mask angle (rad) for every 1 deg azimuth angle */
     int sateph;         /* satellite ephemeris/clock (EPHOPT_???) */
     int modear;         /* AR mode (0:off,1:continuous,2:instantaneous,3:fix and hold,4:ppp-ar) */
     int glomodear;      /* GLONASS AR mode (0:off,1:on,2:auto cal,3:ext cal) */
