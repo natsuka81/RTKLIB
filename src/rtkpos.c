@@ -1955,7 +1955,8 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
     int info,vflg[MAXOBS*NFREQ*2+1],svh[MAXOBS*2];
     int stat=rtk->opt.mode<=PMODE_DGPS?SOLQ_DGPS:SOLQ_FLOAT;
     int nf=opt->ionoopt==IONOOPT_IFLC?1:opt->nf;
-    
+    char id[32];
+
     trace(3,"relpos  : nx=%d nu=%d nr=%d\n",rtk->nx,nu,nr);
     
     /* time diff between base and rover observations (usually zero) */
@@ -2197,7 +2198,23 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
         if (rtk->ssat[i].lock[j]<0||(rtk->nfix>0&&rtk->ssat[i].fix[j]>=2))
             rtk->ssat[i].lock[j]++;
     }
-    free(rs); free(dts); free(var); free(y); free(e); free(azel);
+
+    		/* #################print common satellites #######################*/
+	trace(1,"------------common sattellite------ %d \n",rtk->sol.ns);
+	for (i=0;i<ns;i++) for (j=0;j<nf;j++) {
+		if(rtk->ssat[sat[i]-1].vsat[j]){
+			satno2id(sat[i],id);
+			if (j==0) {
+				trace(1,"%-3s, L1\n",id);
+			}else if(j==1){
+				trace(1,"%-3s, L1+L2\n",id);
+			}else{
+                trace(1,"%-3s, L1+L2+L5\n",id);
+            }
+		}
+	}
+
+	free(rs); free(dts); free(var); free(y); free(e); free(azel);
     free(xp); free(Pp);  free(xa);  free(v); free(H); free(R); free(bias);
     
     if (stat!=SOLQ_NONE) rtk->sol.stat=stat;
