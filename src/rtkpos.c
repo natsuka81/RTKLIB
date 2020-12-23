@@ -413,6 +413,7 @@ static int selsat(const obsd_t *obs, double *azel, double *azel_r, int nu, int n
 {
 	int i,j,k=0;
 	int sss=0;
+    char id[32];
 
 	trace(1,"###################################\n");
 	trace(1,"selsat  : nu=%d nr=%d\n",nu,nr);
@@ -422,8 +423,15 @@ static int selsat(const obsd_t *obs, double *azel, double *azel_r, int nu, int n
 		else if (obs[i].sat>obs[j].sat) i--;
 		else if (azel[1+j*2]>=opt->elmin && azel_r[1+i*2]>=opt->elmaskdata[(int)(azel_r[i*2]*R2D+0.5)]) { /* elevation at base and rover station */
 			sat[k]=obs[i].sat; iu[k]=i; ir[k++]=j;
-			trace(1,":(%2d) sat=%3d iu=%2d ir=%2d\n",k-1,obs[i].sat,i,j);
-			trace(1,"el(deg) = %3f, elmask(deg) = %3f\n", azel_r[1+i*2]*R2D, opt->elmaskdata[(int)(azel_r[i*2]*R2D+0.5)]*R2D);
+			satno2id(sat[k],id);
+			trace(1,"sat[k] is %d\n",sat[k]);
+			trace(1,"obs[i].sat is %d\n",obs[i].sat);
+			//trace(1,":(%2d) sat=%3d iu=%2d ir=%2d\n",k-1,obs[i].sat,i,j);
+			trace(1,"LOS  %s: el(deg) = %3f, elmask(deg) = %3f\n",id, azel_r[1+i*2]*R2D, opt->elmaskdata[(int)(azel_r[i*2]*R2D+0.5)]*R2D);
+		} else {
+			satno2id(obs[i].sat,id);
+			trace(1,"NLOS %s: el(deg) = %3f, elmask(deg) = %3f\n",id, azel_r[1+i*2]*R2D, opt->elmaskdata[(int)(azel_r[i*2]*R2D+0.5)]*R2D);
+
 		}
 	}
 	trace(1,"common sat is %2d\n", k);
@@ -1511,7 +1519,6 @@ static int azelrover(int n, const double *rs, const double *rr, const prcopt_t *
 {
 	double r, rr_[3], pos_[3];
 	int i;
-
 	/*trace(1,"#####################################\n");*/
 	/*trace(1,"azelrover   : n=%d\n",n);*/
 
@@ -1544,7 +1551,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
     int info,vflg[MAXOBS*NFREQ*2+1],svh[MAXOBS*2];
     int stat=rtk->opt.mode<=PMODE_DGPS?SOLQ_DGPS:SOLQ_FLOAT;
     int nf=opt->ionoopt==IONOOPT_IFLC?1:opt->nf;
-    
+    char id[32];
     trace(3,"relpos  : nx=%d nu=%d nr=%d\n",rtk->nx,nu,nr);
     
     dt=timediff(time,obs[nu].time);
@@ -1723,7 +1730,23 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
         if (rtk->ssat[i].fix[j]==2&&stat!=SOLQ_FIX) rtk->ssat[i].fix[j]=1;
         if (rtk->ssat[i].slip[j]&1) rtk->ssat[i].slipc[j]++;
     }
-    free(rs); free(dts); free(var); free(y); free(e); free(azel);
+
+	/* #################print common satellites #######################*/
+	trace(1,"------------common sattellite------ %d \n",rtk->sol.ns);
+	for (i=0;i<ns;i++) for (j=0;j<nf;j++) {
+		if(rtk->ssat[sat[i]-1].vsat[j]){
+			satno2id(sat[i],id);
+			if (j==0) {
+				trace(1,"%-3s, L1\n",id);
+			}else if(j==1){
+				trace(1,"%-3s, L1+L2\n",id);
+			}else{
+                trace(1,"%-3s, L1+L2+L5\n",id);
+            }
+		}
+	}
+
+	free(rs); free(dts); free(var); free(y); free(e); free(azel);
     free(xp); free(Pp);  free(xa);  free(v); free(H); free(R); free(bias);
     
     if (stat!=SOLQ_NONE) rtk->sol.stat=stat;
