@@ -482,21 +482,31 @@ static void initx(rtk_t *rtk, double xi, double var, int i)
     }
 }
 /* select common satellites between rover and reference station --------------*/
-static int selsat(const obsd_t *obs, double *azel, int nu, int nr,
+static int selsat(const obsd_t *obs, double *azel, double *azel_r, int nu, int nr,
                   const prcopt_t *opt, int *sat, int *iu, int *ir)
 {
-    int i,j,k=0;
-    
-    trace(3,"selsat  : nu=%d nr=%d\n",nu,nr);
+	int i,j,k=0;
+	int sss=0;
+	char id[32];
+
+	trace(1,"selsat  : nu=%d nr=%d\n",nu,nr);
     
     for (i=0,j=nu;i<nu&&j<nu+nr;i++,j++) {
         if      (obs[i].sat<obs[j].sat) j--;
-        else if (obs[i].sat>obs[j].sat) i--;
-        else if (azel[1+j*2]>=opt->elmin) { /* elevation at base station */
-            sat[k]=obs[i].sat; iu[k]=i; ir[k++]=j;
-            trace(4,"(%2d) sat=%3d iu=%2d ir=%2d\n",k-1,obs[i].sat,i,j);
-        }
-    }
+		else if (obs[i].sat>obs[j].sat) i--;
+		else if (azel[1+j*2]>=opt->elmin && azel_r[1+i*2]>=opt->elmaskdata[(int)(azel_r[i*2]*R2D+0.5)]*D2R) { /* elevation at base and rover station */
+			sat[k]=obs[i].sat; iu[k]=i; ir[k++]=j;
+			satno2id(sat[k],id);
+			trace(1,"sat[k] is %d\n",sat[k]);
+			trace(1,"obs[i].sat is %d\n",obs[i].sat);
+			//trace(1,":(%2d) sat=%3d iu=%2d ir=%2d\n",k-1,obs[i].sat,i,j);
+			trace(1,"LOS  %s: el(deg) = %3f, elmask(deg) = %3f\n",id, azel_r[1+i*2]*R2D, opt->elmaskdata[(int)(azel_r[i*2]*R2D+0.5)]);
+		} else {
+			satno2id(obs[i].sat,id);
+			trace(1,"NLOS %s: el(deg) = %3f, elmask(deg) = %3f\n",id, azel_r[1+i*2]*R2D, opt->elmaskdata[(int)(azel_r[i*2]*R2D+0.5)]);
+
+		}
+	}
     return k;
 }
 /* temporal update of position/velocity/acceleration -------------------------*/
@@ -1222,7 +1232,7 @@ static int ddres(rtk_t *rtk, const nav_t *nav, const obsd_t *obs, double dt, con
     double bl,dr[3],posu[3],posr[3],didxi=0.0,didxj=0.0,*im,icb,threshadj;
     double *tropr,*tropu,*dtdxr,*dtdxu,*Ri,*Rj,lami,lamj,fi,fj,df,*Hi=NULL;
     int i,j,ii,jj,k,m,f,frq,code,nv=0,nb[NFREQ*4*2+2]={0},b=0,sysi,sysj,nf=NF(opt);
-    
+
     trace(3,"ddres   : dt=%.1f nx=%d ns=%d\n",dt,rtk->nx,ns);
     
     /* bl=distance from base to rover, dr=x,y,z components */
@@ -1375,7 +1385,7 @@ static int ddres(rtk_t *rtk, const nav_t *nav, const obsd_t *obs, double dt, con
                           (rtk->P[jj+rtk->nx*jj]>SQR(rtk->opt.std[0]/2))?opt->eratio[frq]:1;
                 if (opt->maxinno>0.0&&fabs(v[nv])>opt->maxinno*threshadj) {
                        rtk->ssat[sat[j]-1].vsat[frq]=0;
-                       rtk->ssat[sat[j]-1].rejc[frq]++;
+					   rtk->ssat[sat[j]-1].rejc[frq]++;
                        errmsg(rtk,"outlier rejected (sat=%3d-%3d %s%d v=%.3f)\n",
                             sat[i],sat[j],code?"P":"L",frq+1,v[nv]);
                     continue;
@@ -1938,6 +1948,43 @@ static int valpos(rtk_t *rtk, const double *v, const double *R, const int *vflg,
 #endif
     return stat;
 }
+
+/* compute azel of rover ------------------------------------------------------
+* compute azel of rover
+* args   : int       n      I   the number of satellites(rover)
+*          double *rs       I   satellilte position (ecef at transmission) (m)
+*          double *rr       I   receiver position (ecef at reception) (m)
+*          prcopt_t *opt    I   positioning options (see rtklib.h)
+*          double *e_r      IO  receiver-to-satellilte unit vevtor (ecef)
+*          double *azel_r   IO  azimuth/elevation {az,el} (rad) (NULL: no output)
+* return : none
+*-----------------------------------------------------------------------------*/
+static int azelrover(int n, const double *rs, const double *rr, const prcopt_t *opt, double *e_r, double *azel_r)
+{
+	double r, rr_[3], pos_[3];
+	int i;
+
+	/*trace(1,"#####################################\n");*/
+	/*trace(1,"azelrover   : n=%d\n",n);*/
+
+	if (norm(rr,3)<=0.0) return 0; /* no receiver position */
+
+	for (i=0;i<3;i++) rr_[i]=rr[i];
+	/*trace(1, "rr_[0]=%3f, rr_[1]=%3f, rr_[2]=%3f\n", rr[0],rr[1],rr[2]);*/
+
+	/* earth tide correction might be needed to consider? */
+	/* ....... */
+	ecef2pos(rr_,pos_);
+	/*trace(1,"pos[0]=%3f, pos[1]=%3f, pos[2]=%3f\n", pos[0],pos[1],pos[2]);*/
+
+	for (i=0;i<n;i++){
+		if ((r=geodist(rs+i*6,rr_,e_r+i*3))<=0.0) continue;
+		if (satazel(pos_,e_r+i*3,azel_r+i*2)<opt->elmin) continue;
+		/*trace(1, "azelr*** :(%d), el(deg)=%f, elmask(deg)=%f\n", i,azel_r[1+i*2]*R2D, opt->elmaskdata[(int)(azel_r[i*2]*R2D+0.5)]);*/
+	}
+    return 1;
+}
+
 /* relpos()relative positioning ------------------------------------------------------
  *  args:  rtk      IO      gps solution structure
            obs      I       satellite observations
@@ -1951,7 +1998,8 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
     prcopt_t *opt=&rtk->opt;
     gtime_t time=obs[0].time;
     double *rs,*dts,*var,*y,*e,*azel,*v,*H,*R,*xp,*Pp,*xa,*bias,dt;
-    int i,j,f,n=nu+nr,ns,ny,nv,sat[MAXSAT],iu[MAXSAT],ir[MAXSAT],niter;
+	double *e_r, *azel_r, xp_r[7]={0};
+	int i,j,f,n=nu+nr,ns,ny,nv,sat[MAXSAT],iu[MAXSAT],ir[MAXSAT],niter;
     int info,vflg[MAXOBS*NFREQ*2+1],svh[MAXOBS*2];
     int stat=rtk->opt.mode<=PMODE_DGPS?SOLQ_DGPS:SOLQ_FLOAT;
     int nf=opt->ionoopt==IONOOPT_IFLC?1:opt->nf;
@@ -1968,7 +2016,9 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
     var=mat(1,n);
     y=mat(nf*2,n);
     e=mat(3,n);
-    azel=zeros(2,n);        /* [az, el] */
+	azel=zeros(2,n);        /* [az, el] */
+    e_r=mat(3,n);
+	azel_r=zeros(2,n);
 
     /* init satellite status arrays */
     for (i=0;i<MAXSAT;i++) {
@@ -1996,14 +2046,28 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
     if (opt->intpref) {
         dt=intpres(time,obs+nu,nr,nav,rtk,y+nu*nf*2);
     }
-    /* select common satellites between rover and base-station */
-    if ((ns=selsat(obs,azel,nu,nr,opt,sat,iu,ir))<=0) {
+    /* compute azel of rover */
+	/*xp_r=mat(rtk->nx,1);*/
+	for (i=0;i<3;i++) xp_r[i]=rtk->sol.rr[i]; /* use solution of pntpos as rover position */
+	if (!azelrover(nu, rs, xp_r, opt, e_r, azel_r)) {
+		errmsg(rtk,"no satelites at rover station\n");
+
+		free(rs); free(dts); free(var); free(y); free(e); free(azel);
+        free(e_r); free(azel_r);
+		return 0;
+	}
+
+
+	/* select common satellites between rover and base-station */
+	if ((ns=selsat(obs,azel,azel_r,nu,nr,opt,sat,iu,ir))<=0) {
         errmsg(rtk,"no common satellite\n");
         
-        free(rs); free(dts); free(var); free(y); free(e); free(azel);
+        free(rs); free(dts); free(var); free(y); free(e); free(azel);free(azel_r);
         return 0;
-    }
-    /* update kalman filter states (pos,vel,acc,ionosp, troposp, sat phase biases) */
+	}
+
+	trace(1,"number of selected LOS satellites: %d\n",ns);
+	/* update kalman filter states (pos,vel,acc,ionosp, troposp, sat phase biases) */
     udstate(rtk,obs,sat,iu,ir,ns,nav);
     
     trace(4,"x(0)="); tracemat(4,rtk->x,1,NR(opt),13,4);
@@ -2199,7 +2263,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,
             rtk->ssat[i].lock[j]++;
     }
 
-    		/* #################print common satellites #######################*/
+	/* #################print common satellites #######################*/
 	trace(1,"------------common sattellite------ %d \n",rtk->sol.ns);
 	for (i=0;i<ns;i++) for (j=0;j<nf;j++) {
 		if(rtk->ssat[sat[i]-1].vsat[j]){

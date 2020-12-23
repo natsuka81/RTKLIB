@@ -1067,7 +1067,8 @@ typedef struct {        /* processing options type */
     int nf;             /* number of frequencies (1:L1,2:L1+L2,3:L1+L2+L3,4:L1+L2+L3+L4) */
     int navsys;         /* navigation system */
     double elmin;       /* elevation mask angle (rad) */
-    snrmask_t snrmask;  /* SNR mask */
+	snrmask_t snrmask;  /* SNR mask */
+    double elmaskdata[360]; /* elevation mask angle (rad) for every 1 deg azimuth angle */
     int sateph;         /* satellite ephemeris/clock (EPHOPT_???) */
     int modear;         /* AR mode (0:off,1:continuous,2:instantaneous,3:fix and hold,4:ppp-ar) */
     int glomodear;      /* GLONASS AR mode (0:off,1:on,2:auto cal,3:ext cal) */
